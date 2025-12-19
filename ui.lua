@@ -1,25 +1,28 @@
 local UI = {}
 UI.windows = {}
 UI.visible = true
-UI.keys = { up = false, down = false, enter = false, toggle = false }
+UI.toggle_key_latched = false
 
--- Valex Rounded Rect Simulation
-function draw_box(x, y, w, h, c)
-    valex.draw_filled_rect(x, y, x + w, y + h, c)
+-- Helper: Check if mouse is over a box
+local function is_hovering(mx, my, x, y, w, h)
+    return mx >= x and mx <= (x + w) and my >= y and my <= (y + h)
 end
 
 function UI:CreateWindow(args)
     local win = {
         x = args.x, y = args.y, w = args.w, h = args.h,
-        c = args.AccentColor or color3.new(1, 0.6, 0),
-        bc = color3.new(0.1, 0.1, 0.1),
-        t = args.Title or "Valex Menu",
-        items = {},
-        selected = 1
+        title = args.Title or "VALEX PREMIUM",
+        accent = args.AccentColor or color3.new(0, 0.5, 1),
+        items = {}
     }
 
     function win:CreateToggle(args)
-        local tgl = { type = "toggle", text = args.Text, value = false, callback = args.Callback }
+        local tgl = {
+            type = "toggle",
+            text = args.Text,
+            value = false,
+            callback = args.Callback
+        }
         table.insert(self.items, tgl)
         return tgl
     end
@@ -30,47 +33,61 @@ end
 
 function UI:Draw()
     if not UI.visible then return end
+    
+    local mx, my = valex.get_mouse_pos()
+    local click = valex.is_key_pressed(0x01) -- Left Click
+
     for _, win in ipairs(UI.windows) do
-        -- Main Background
-        draw_box(win.x, win.y, win.w, win.h, win.bc)
-        -- Header
-        draw_box(win.x, win.y, win.w, 30, win.c)
-        valex.draw_text(win.t, win.x + (win.w/2), win.y + 8, color3.white())
+        -- Main Window Shadow & Body
+        valex.draw_filled_rect(win.x - 2, win.y - 2, win.x + win.w + 2, win.y + win.h + 2, color3.new(0,0,0))
+        valex.draw_filled_rect(win.x, win.y, win.x + win.w, win.y + win.h, color3.new(0.12, 0.12, 0.12))
+        
+        -- Header Bar
+        valex.draw_filled_rect(win.x, win.y, win.x + win.w, win.y + 35, win.accent)
+        valex.draw_text(win.title, win.x + 10, win.y + 8, color3.white())
 
         for i, item in ipairs(win.items) do
-            local iy = win.y + 40 + (i-1)*35
-            local is_sel = (i == win.selected)
-            local btn_col = is_sel and win.c or color3.new(0.2, 0.2, 0.2)
+            local iy = win.y + 45 + (i-1) * 40
+            local ix = win.x + 10
+            local iw = win.w - 20
+            local ih = 32
+
+            -- Hover Effect
+            local hovering = is_hovering(mx, my, ix, iy, iw, ih)
+            local bg_col = hovering and color3.new(0.2, 0.2, 0.2) or color3.new(0.16, 0.16, 0.16)
             
-            draw_box(win.x + 10, iy, win.w - 20, 30, btn_col)
-            local status = item.value and "[ON]" or "[OFF]"
-            valex.draw_text(item.text .. " " .. status, win.x + (win.w/2), iy + 7, color3.white())
+            -- Draw Button Background
+            valex.draw_filled_rect(ix, iy, ix + iw, iy + ih, bg_col)
+            valex.draw_text(item.text, ix + 10, iy + 7, color3.white())
+
+            -- Draw Toggle Switch (Visual)
+            local sw_x = ix + iw - 45
+            local sw_w = 35
+            local sw_col = item.value and win.accent or color3.new(0.3, 0.3, 0.3)
+            valex.draw_filled_rect(sw_x, iy + 6, sw_x + sw_w, iy + 26, sw_col)
+            
+            -- Indicator dot
+            local dot_x = item.value and (sw_x + 20) or (sw_x + 5)
+            valex.draw_filled_rect(dot_x, iy + 8, dot_x + 10, iy + 24, color3.white())
+
+            -- Click Logic
+            if hovering and click and not item.latched then
+                item.value = not item.value
+                item.latched = true
+                if item.callback then item.callback(item.value) end
+            elseif not click then
+                item.latched = false
+            end
         end
     end
 end
 
-function UI:Update()
-    -- Key 0x38 is '8'
-    local menu_key = valex.is_key_pressed(0x38)
-    if menu_key and not UI.keys.toggle then UI.visible = not UI.visible end
-    UI.keys.toggle = menu_key
-
-    if not UI.visible then return end
-
-    local down = valex.is_key_pressed(0x28)
-    local up = valex.is_key_pressed(0x26)
-    local enter = valex.is_key_pressed(0x0D)
-
-    for _, win in ipairs(UI.windows) do
-        if down and not UI.keys.down then win.selected = (win.selected % #win.items) + 1 end
-        if up and not UI.keys.up then win.selected = (win.selected - 2) % #win.items + 1 end
-        if enter and not UI.keys.enter then
-            local item = win.items[win.selected]
-            item.value = not item.value
-            if item.callback then item.callback(item.value) end
-        end
+function UI:HandleToggle()
+    local key8 = valex.is_key_pressed(0x38) -- Key "8"
+    if key8 and not UI.toggle_key_latched then
+        UI.visible = not UI.visible
     end
-    UI.keys.down, UI.keys.up, UI.keys.enter = down, up, enter
+    UI.toggle_key_latched = key8
 end
 
 return UI
